@@ -515,7 +515,7 @@ async function findAndClickDashboardAction(page, safeUsername) {
                     // --- Cloudflare Turnstile Bypass for Login ---
                     console.log('   >> 正在登录前检查 Turnstile (使用 CDP 绕过)...');
                     let cdpClickResult = false;
-                    for (let findAttempt = 0; findAttempt < 20; findAttempt++) {
+                    for (let findAttempt = 0; findAttempt < 5; findAttempt++) {
                         cdpClickResult = await attemptTurnstileCdp(page);
                         if (cdpClickResult) break;
                         await page.waitForTimeout(1000);
@@ -690,10 +690,10 @@ async function findAndClickDashboardAction(page, safeUsername) {
                     // B. 找 Turnstile (小重试)
                     console.log('正在检查 Turnstile (使用 CDP 绕过)...');
                     let cdpClickResult = false;
-                    for (let findAttempt = 0; findAttempt < 30; findAttempt++) {
+                    for (let findAttempt = 0; findAttempt < 5; findAttempt++) {
                         cdpClickResult = await attemptTurnstileCdp(page);
                         if (cdpClickResult) break;
-                        console.log(`   >> [寻找尝试 ${findAttempt + 1}/30] 尚未找到 Turnstile 复选框...`);
+                        console.log(`   >> [寻找尝试 ${findAttempt + 1}/5] 尚未找到 Turnstile 复选框...`);
                         await page.waitForTimeout(1000);
                     }
 
