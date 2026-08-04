@@ -212,7 +212,10 @@ async function launchChrome() {
         '--disable-features=IsolateOrigins,site-per-process',
         '--disable-blink-features=AutomationControlled',
         '--no-zygote',
-        '--user-data-dir=/tmp/chrome_user_data' // 必须指定用户数据目录，否则远程调试可能失败
+        '--user-data-dir=/tmp/chrome_user_data', // 必须指定用户数据目录，否则远程调试可能失败
+        // 加载 turnstilePatch 扩展, 修补 screenX/screenY 让 Turnstile 走 auto 模式
+        `--load-extension=${path.join(__dirname, 'turnstilePatch')}`,
+        `--disable-extensions-except=${path.join(__dirname, 'turnstilePatch')}`
     ];
 
     if (PROXY_CONFIG) {
