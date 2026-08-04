@@ -157,13 +157,18 @@ async function checkProxy ( ) {
 
 function checkPort ( port ) {
     return new Promise ( ( resolve ) => {
-        const req = http.get ( `http://localhost: ${ port } /json/version`, ( res ) => {
+        // === 防御性修复：清理 port 变量 + 用 127.0.0.1 替代 localhost ===
+        const cleanPort = String ( port ).replace ( /[^0-9]/g, '' );
+        const targetUrl = `http://127.0.0.1: ${ cleanPort } /json/version`;
+        console.log ( `[checkPort] 检测端口: ${ targetUrl } ` );
+        const req = http.get ( targetUrl, ( res ) => {
             resolve ( true );
         } );
         req.on ( 'error', ( ) => resolve ( false ) );
         req.end ( );
     } );
 }
+
 
 async function launchChrome ( ) {
     console.log ( '检查 Chrome 是否已在端口 ' + DEBUG_PORT + ' 上运行...' );
