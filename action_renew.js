@@ -60,24 +60,15 @@ process.env.NO_PROXY = 'localhost,127.0.0.1';
 const HTTP_PROXY = (process.env.HTTP_PROXY || '').trim();
 let PROXY_CONFIG = null;
 
-// === 自动登录态保存: 登录成功后 (无论复用登录态还是正常登录) 自动保存 cookies 到 login_state.json,
-// === 实现 14 天自愈循环. 下次运行时若 katabump_s 过期, 会自动走登录流程再次保存.
-async function saveLoginStateAuto(context) {
-    try {
-        const file = process.env.LOGIN_STATE_FILE || 'login_state.json';
-        const cookies = await context.cookies();
-        if (!cookies.length) return false;
-        const state = { cookies, origins: [], createdAt: new Date().toISOString() };
-        const tmp = file + '.tmp';
-        fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
-        fs.renameSync(tmp, file);  // 原子写入, 避免文件损坏
-        console.log(`>>> 登录态已自动保存到 ${file} (${cookies.length} 个 cookie)`);
-        return true;
-    } catch (e) {
-        console.log('>>> 登录态自动保存失败:', e.message);
-        return false;
-    }
-}
+// === Chrome profile 持久化目录 (借鉴 XCQ0607/katabump 的 renew.js 的 USER_DATA_DIR 方案) ===
+// Chrome 自动保存 cookies / localStorage 到这个目录, 下次启动自动恢复,
+// 替代之前的 login_state.json 手动导出 cookies 方案. 14 天自愈循环靠自动重新登录保持.
+// 路径固定 (不用 os.tmpdir), 让 Chrome profile 跨进程保留.
+const USER_DATA_DIR = process.env.CHROME_USER_DATA_DIR || (
+    process.platform === 'win32'
+        ? path.join(require('os').tmpdir(), 'katabump_chrome_data')
+        : '/tmp/katabump_chrome_data'
+);
 
 if (HTTP_PROXY) {
     try {
@@ -238,8 +229,9 @@ async function launchChrome() {
         `--load-extension=${path.join(__dirname, 'turnstilePatch')}`,
         `--disable-extensions-except=${path.join(__dirname, 'turnstilePatch')}`
     ];
-    // 必须指定 --user-data-dir 远程调试才生效. Windows 用 os.tmpdir(), Linux 用 /tmp
-    args.push(`--user-data-dir=${process.platform === 'win32' ? path.join(require('os').tmpdir(), 'chrome_user_data') : '/tmp/chrome_user_data'}`);
+        // 必须指定 --user-data-dir 远程调试才生效. 使用固定 USER_DATA_DIR 路径
+        // 让 Chrome profile 跨进程保留, 自动持久化 cookies 实现 14 天自愈
+        args.push(`--user-data-dir=${USER_DATA_DIR}`);
 
     if (PROXY_CONFIG) {
         args.push(`--proxy-server=${PROXY_CONFIG.server}`);
@@ -496,33 +488,11 @@ async function findAndClickDashboardAction(page, safeUsername) {
                 await page.addInitScript(INJECTED_SCRIPT);
             }
 
-            // === 登录态复用：优先用已保存的登录态，跳过登录和验证码 ===
+            // === 登录逻辑 ===
+            // 登录态由 Chrome USER_DATA_DIR (上面定义) 自动持久化和复用.
+            // 当 katabump_s 14 天过期后, 此处正常登录流程会自动跑一次重新登录,
+            // Chrome 自动把新 cookies 写回 USER_DATA_DIR, 形成自愈循环 (无需手动管理 login_state.json).
             let loginSuccess = false;
-            let useLoginState = false;
-            try {
-                const loginStateRaw = process.env.LOGIN_STATE || (fs.existsSync('login_state.json') ? fs.readFileSync('login_state.json', 'utf8') : null);
-                if (loginStateRaw) {
-                    const state = JSON.parse(loginStateRaw);
-                    if (state.cookies && state.cookies.length) {
-                        await context.clearCookies();
-                        await context.addCookies(state.cookies);
-                        await page.goto('https://dashboard.katabump.com/dashboard');
-                        await page.waitForTimeout(4000);
-                        if (!page.url().includes('/auth/login')) {
-                            console.log('>>> 登录态有效！跳过登录和验证码，直接进入 dashboard');
-                            useLoginState = true;
-                            loginSuccess = true;
-                        } else {
-                            console.log('>>> 登录态已过期，将走正常登录流程');
-                        }
-                    }
-                }
-            } catch (e) {
-                console.log('登录态处理失败:', e.message);
-            }
-
-            if (!useLoginState) {
-            // --- 登录逻辑 ---
             if (page.url().includes('dashboard')) {
                 await page.goto('https://dashboard.katabump.com/auth/logout');
                 await page.waitForTimeout(2000);
@@ -696,7 +666,6 @@ async function findAndClickDashboardAction(page, safeUsername) {
                     break;
                 }
             }
-            } // end if (!useLoginState)
 
             if (!loginSuccess) {
                 console.log('登录未成功，跳过 dashboard 入口查找。');
@@ -875,16 +844,6 @@ async function findAndClickDashboardAction(page, safeUsername) {
             console.log(`截图已保存至: ${screenshotPath}`);
         } catch (e) {
             console.log('截图失败:', e.message);
-        }
-
-        // 登录成功则自动保存登录态, 形成 14 天自愈循环
-        // 只要不在登录页 (说明本次成功进 dashboard), 就把当前 cookies 写入 login_state.json
-        try {
-            if (page && !page.isClosed() && !page.url().includes('/auth/login')) {
-                await saveLoginStateAuto(context);
-            }
-        } catch (e) {
-            console.log('保存登录态时出错:', e.message);
         }
 
         console.log(`用户处理完成\n`);
