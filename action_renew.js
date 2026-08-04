@@ -1,40 +1,40 @@
-const { chromium } = require ( 'playwright-extra' );
-const stealth = require ( 'puppeteer-extra-plugin-stealth' ) ( );
-const axios = require ( 'axios' );
-const fs = require ( 'fs' );
-const path = require ( 'path' );
-const { spawn, exec } = require ( 'child_process' );
-const http = require ( 'http' );
+c onst { c hromium } = require ( 'playwright-extra' );
+c onst stealth = require ( 'puppeteer-extra-plugin-stealth' ) ( );
+c onst axios = require ( 'axios' );
+c onst fs = require ( 'fs' );
+c onst path = require ( 'path' );
+c onst { spawn, exe c } = require ( ' c hild_pro c ess' );
+c onst http = require ( 'http' );
 
-const TG_BOT_TOKEN = process.env.TG_BOT_TOKEN;
-const TG_CHAT_ID = process.env.TG_CHAT_ID;
+c onst TG_BOT_TOKEN = pro c ess.env.TG_BOT_TOKEN;
+c onst TG_ C HAT_ID = pro c ess.env.TG_ C HAT_ID;
 
-async function sendTelegramMessage ( message, imagePath = null ) {
-    if (!TG_BOT_TOKEN || !TG_CHAT_ID ) return;
+asyn c fun c tion sendTelegramMessage ( message, imagePath = null ) {
+    if (!TG_BOT_TOKEN || !TG_ C HAT_ID ) return;
 
     // 1. 发送文字消息
     try {
-        const url = `https://api.telegram.org/bot ${ TG_BOT_TOKEN } /sendMessage`;
+        c onst url = `https://api.telegram.org/bot ${ TG_BOT_TOKEN } /sendMessage`;
         await axios.post ( url, {
-            chat_id: TG_CHAT_ID,
+            c hat_id: TG_ C HAT_ID,
             text: message,
             parse_mode: 'Markdown'
         } );
-        console.log ( '[Telegram] Message sent.' );
-    } catch ( e ) {
-        console.error ( '[Telegram] Failed to send message:', e.message );
+        c onsole.log ( '[Telegram] Message sent.' );
+    } c at c h ( e ) {
+        c onsole.error ( '[Telegram] Failed to send message:', e.message );
     }
 
     // 2. 发送图片 (如果有)
-    if ( imagePath && fs.existsSync ( imagePath ) ) {
-        console.log ( '[Telegram] Sending photo...' );
-        // 使用 curl 发送图片，避免引入额外的 multipart 依赖
-        // 注意：Windows 本地测试可能需要环境支持 curl，GitHub Actions (Ubuntu) 默认支持
-        const cmd = `curl -s -X POST "https://api.telegram.org/bot ${ TG_BOT_TOKEN } /sendPhoto" -F chat_id=" ${ TG_CHAT_ID } " -F photo="@ ${ imagePath } "`;
+    if ( imagePath && fs.existsSyn c ( imagePath ) ) {
+        c onsole.log ( '[Telegram] Sending photo...' );
+        // 使用 c url 发送图片，避免引入额外的 multipart 依赖
+        // 注意：Windows 本地测试可能需要环境支持 c url，GitHub A c tions (Ubuntu) 默认支持
+        c onst c md = ` c url -s -X POST "https://api.telegram.org/bot ${ TG_BOT_TOKEN } /sendPhoto" -F c hat_id=" ${ TG_ C HAT_ID } " -F photo="@ ${ imagePath } "`;
         await new Promise ( resolve => {
-            exec ( cmd, ( err ) => {
-                if ( err ) console.error ( '[Telegram] Failed to send photo via curl:', err.message );
-                else console.log ( '[Telegram] Photo sent.' );
+            exe c ( c md, ( err ) => {
+                if ( err ) c onsole.error ( '[Telegram] Failed to send photo via c url:', err.message );
+                else c onsole.log ( '[Telegram] Photo sent.' );
                 resolve ( );
             } );
         } );
@@ -44,8 +44,8 @@ async function sendTelegramMessage ( message, imagePath = null ) {
 // 启用 stealth 插件
 chromium.use ( stealth );
 
-// GitHub Actions 环境下的 Chrome 路径 (通常是 google-chrome)
-const CHROME_PATH = process.env.CHROME_PATH || '/usr/bin/google-chrome';
+// GitHub Actions 环境下的 Chrome 路径 (通常是 google- chrome )
+const CHROME _PATH = process.env.CHROME _PATH || '/usr/bin/google- chrome ';
 const DEBUG_PORT = 9222;
 
 // 确保 localhost 不走代理
@@ -142,77 +142,86 @@ async function checkProxy ( ) {
         if ( PROXY_CONFIG.username && PROXY_CONFIG.password ) {
             axiosConfig.proxy.auth = {
                 username: PROXY_CONFIG.username,
-                password: PROXY_CONFIG.password
+                password: PROXY_C ONFIG.password
             };
         }
 
-        await axios.get ( 'https://www.google.com', axiosConfig );
-        console.log ( '[代理] 连接成功！' );
+        await axios.get ( 'https://www.google.c om', axiosC onfig );
+        c onsole.log ( '[代理] 连接成功！' );
         return true;
-    } catch ( error ) {
-        console.error ( `[代理] 连接失败: ${ error.message } ` );
+    } c at c h ( error ) {
+        c onsole.error ( `[代理] 连接失败: ${ error.message } ` );
         return false;
     }
 }
 
-function checkPort ( port ) {
-    return new Promise ( function ( resolve ) {
+func tion c he c kPort ( port ) {
+    return new Promise ( func tion ( resolve ) {
         var s = String ( port );
         var digits = "";
         for ( var i = 0; i < s.length; i++) {
-            var ch = s.charAt ( i );
-            if ( ch >= "0" && ch <= "9" ) digits += ch;
+            var c h = s.c harAt ( i );
+            if ( c h >= "0" && c h <= "9" ) digits += c h;
         }
         var portNum = parseInt ( digits, 10 );
         if (!portNum ) {
-            console.log ( "[checkPort] 无效端口: " + port );
+            c onsole.log ( "[c he c kPort] 无效端口: " + port );
             return resolve ( false );
         }
-        console.log ( "[checkPort] TCP测试 127.0.0.1:" + portNum );
+        c onsole.log ( "[c he c kPort] T C P测试 127.0.0.1:" + portNum );
         var net = require ( "net" );
-        var sock = new net.Socket ( );
-        sock.setTimeout ( 3000 );
-        sock.on ( "connect", function ( ) { sock.destroy ( ); resolve ( true ); } );
-        sock.on ( "error", function ( ) { sock.destroy ( ); resolve ( false ); } );
-        sock.on ( "timeout", function ( ) { sock.destroy ( ); resolve ( false ); } );
-        sock.connect ( portNum, "127.0.0.1" );
+        var soc k = new net.Soc ket ( );
+        soc k.setTimeout ( 3000 );
+        soc k.on ( "c onne c t", func tion ( ) { soc k.destroy ( ); resolve ( true ); } );
+        soc k.on ( "error", func tion ( ) { soc k.destroy ( ); resolve ( false ); } );
+        soc k.on ( "timeout", func tion ( ) { soc k.destroy ( ); resolve ( false ); } );
+        soc k.c onne c t ( portNum, "127.0.0.1" );
     } );
 }
 
-async function launchChrome ( ) {
-    console.log ( '检查 Chrome 是否已在端口 ' + DEBUG_PORT + ' 上运行...' );
-    if ( await checkPort ( DEBUG_PORT ) ) {
-        console.log ( 'Chrome 已开启。' );
+async func tion launc h C hrome ( ) {
+    c onsole.log ( '检查 C hrome 是否已在端口 ' + DEBUG_PORT + ' 上运行...' );
+    if ( await c he c kPort ( DEBUG_PORT ) ) {
+        c onsole.log ( 'C hrome 已开启。' );
         return;
     }
 
-    console.log ( `正在启动 Chrome (路径: ${ CHROME_PATH } )...` );
+    c onsole.log ( `正在启动 C hrome (路径: ${ C HROME_PATH } )...` );
 
-    const args = [
+    c onst args = [
         `--remote-debugging-port= ${ DEBUG_PORT } `,
         '--no-first-run',
-        '--no-default-browser-check',
+        '--no-default-browser-c he c k',
         // '--headless=new', // (已被注释) 使用 xvfb-run 时不需要 headless 模式，这样可以模拟有头浏览器增加成功率
         '--disable-gpu',
         '--window-size=1280,720',
         '--no-sandbox',
         '--disable-setuid-sandbox',
-        '--user-data-dir=/tmp/chrome_user_data' // 必须指定用户数据目录，否则远程调试可能失败
+        '--user-data-dir=/tmp/c hrome_user_data' // 必须指定用户数据目录，否则远程调试可能失败
     ];
 
-    if ( PROXY_CONFIG ) {
-        args.push ( `--proxy-server= ${ PROXY_CONFIG.server } ` );
-        args.push ( '--proxy-bypass-list=<-loopback>' );
+    if ( PROXY_C ONFIG ) {
+        args.push ( `--proxy-server= ${ PROXY_C ONFIG.server } ` );
+        args.push ( '--proxy-bypass-list=<-loopbac k>' );
     }
     // 添加针对 Linux 环境的额外稳定性参数
     args.push ( '--disable-dev-shm-usage' ); // 避免共享内存不足
 
 
-    const chrome = spawn ( CHROME_PATH, args, {
-        detached: true,
-        stdio: 'ignore'
-    } );
-    chrome.unref ( );
+    console.log ( "[launch Chrome ] 路径: " + CHROME _PATH );
+console.log ( "[launch Chrome ] 参数: " + JSON.stringify ( args ) );
+if (!require ( "fs" ).existsSync ( CHROME _PATH ) ) {
+    throw new Error ( " Chrome 文件不存在: " + CHROME _PATH );
+}
+const chrome = spawn ( CHROME _PATH, args, {
+    detached: false,
+    stdio: [ "ignore", "pipe", "pipe" ]
+} );
+chrome.stdout.on ( "data", function ( d ) { process.stdout.write ( "[ chrome -out] " + d ); } );
+chrome.stderr.on ( "data", function ( d ) { process.stderr.write ( "[ chrome -err] " + d ); } );
+chrome.on ( "error", function ( e ) { console.log ( "[ chrome -spawn-error] " + e.message ); } );
+chrome.on ( "exit", function ( c, s ) { console.log ( "[ chrome -exit] code=" + c + " sig=" + s ); } );
+
 
     console.log ( '正在等待 Chrome 初始化...' );
     for ( let i = 0; i < 20; i++) {
@@ -221,8 +230,8 @@ async function launchChrome ( ) {
     }
 
     if (!await checkPort ( DEBUG_PORT ) ) {
-        console.error ( 'Chrome 无法在端口 ' + DEBUG_PORT + ' 上启动' );
-        throw new Error ( 'Chrome 启动失败' );
+        console.error ( ' Chrome 无法在端口 ' + DEBUG_PORT + ' 上启动' );
+        throw new Error ( ' Chrome 启动失败' );
     }
 }
 
@@ -304,9 +313,9 @@ async function attemptTurnstileCdp ( page ) {
         }
     }
 
-    await launchChrome ( );
+    await launch Chrome ( );
 
-    console.log ( `正在连接 Chrome...` );
+    console.log ( `正在连接 Chrome ...` );
     let browser;
     for ( let k = 0; k < 5; k++) {
         try {
