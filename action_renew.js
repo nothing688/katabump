@@ -57,7 +57,7 @@ const DEBUG_PORT = 9222;
 process.env.NO_PROXY = 'localhost,127.0.0.1';
 
 // --- Proxy Configuration ---
-const HTTP_PROXY = process.env.HTTP_PROXY;
+const HTTP_PROXY = (process.env.HTTP_PROXY || '').trim();
 let PROXY_CONFIG = null;
 
 if (HTTP_PROXY) {
@@ -275,83 +275,69 @@ async function attemptTurnstileCdp(page) {
                 const box = await iframeElement.boundingBox();
                 if (!box) continue;
 
-                // 修复 11：优先使用 Playwright 原生鼠标 API（比 CDP 更难被检测）
-                // 同时尝试通过 iframe 内真实 checkbox 元素计算精确坐标
-                let clickX, clickY;
+                // 修复 11+12：尝试多个点击位置
+                // Turnstile 的视觉方框通常在 iframe 左侧，而注入脚本可能指向隐藏的 input
+                const candidatePoints = [];
+                // 位置 1：iframe 左侧视觉方框（基于截图估算：左边缘 + 30px, 垂直中心）
+                candidatePoints.push({ x: box.x + 30 + Math.random() * 10, y: box.y + box.height * 0.5 + (Math.random() - 0.5) * 10, label: 'visual-checkbox-left' });
+                // 位置 2：注入脚本计算的位置
+                candidatePoints.push({ x: box.x + (box.width * data.xRatio) + (Math.random() - 0.5) * 8, y: box.y + (box.height * data.yRatio) + (Math.random() - 0.5) * 8, label: 'injected-ratio' });
+                // 位置 3：iframe 左侧更偏中间
+                candidatePoints.push({ x: box.x + 45 + Math.random() * 10, y: box.y + box.height * 0.5 + (Math.random() - 0.5) * 10, label: 'visual-checkbox-left-2' });
+
+                // 方法 A：Playwright 原生鼠标移动 + 点击
                 try {
-                    const cbRect = await frame.evaluate(() => {
-                        const cb = document.querySelector('input[type="checkbox"]');
-                        if (!cb) return null;
-                        const r = cb.getBoundingClientRect();
-                        return { left: r.left, top: r.top, width: r.width, height: r.height };
-                    });
-                    if (cbRect && cbRect.width > 0) {
-                        clickX = box.x + cbRect.left + cbRect.width / 2;
-                        clickY = box.y + cbRect.top + cbRect.height / 2;
-                        console.log(`>> 使用 iframe 内 checkbox 真实坐标: (${clickX.toFixed(2)}, ${clickY.toFixed(2)})`);
-                    } else {
-                        throw new Error('checkbox rect 无效');
+                    for (const point of candidatePoints) {
+                        console.log(`>> 尝试点击位置 [${point.label}]: (${point.x.toFixed(2)}, ${point.y.toFixed(2)})`);
+
+                        const startX = Math.random() * 300 + 100;
+                        const startY = Math.random() * 300 + 100;
+                        await page.mouse.move(startX, startY);
+                        await page.waitForTimeout(100 + Math.random() * 200);
+
+                        const steps = 10 + Math.floor(Math.random() * 6);
+                        for (let i = 1; i <= steps; i++) {
+                            const t = i / steps;
+                            const easeT = t * t * (3 - 2 * t);
+                            const mx = startX + (point.x - startX) * easeT + (Math.random() - 0.5) * 15;
+                            const my = startY + (point.y - startY) * easeT + (Math.random() - 0.5) * 15;
+                            await page.mouse.move(mx, my);
+                            await page.waitForTimeout(30 + Math.random() * 50);
+                        }
+
+                        await page.waitForTimeout(150 + Math.random() * 200);
+                        await page.mouse.click(point.x + (Math.random() - 0.5) * 4, point.y + (Math.random() - 0.5) * 4);
+                        await page.waitForTimeout(200 + Math.random() * 200);
+                        await page.mouse.move(point.x + 50 + Math.random() * 50, point.y + (Math.random() - 0.5) * 50);
+
+                        // 每次点击后等待 2-3 秒，检查是否成功
+                        await page.waitForTimeout(2500);
+                        let successNow = false;
+                        const checkFrames = page.frames();
+                        for (const f of checkFrames) {
+                            if (f.url().includes('cloudflare')) {
+                                try {
+                                    const successEn = await f.getByText('Success!', { exact: false }).isVisible({ timeout: 300 }).catch(() => false);
+                                    const successCn = await f.getByText('成功', { exact: false }).isVisible({ timeout: 300 }).catch(() => false);
+                                    if (successEn || successCn) {
+                                        console.log(`>> 位置 [${point.label}] 点击成功，Turnstile 已验证。`);
+                                        successNow = true;
+                                        break;
+                                    }
+                                } catch (e) { }
+                            }
+                        }
+                        if (successNow) return true;
+
+                        console.log(`>> 位置 [${point.label}] 未触发成功，尝试下一个位置...`);
                     }
-                } catch (e) {
-                    // 备选：用注入脚本计算的比例
-                    const offsetX = (Math.random() - 0.5) * 12;
-                    const offsetY = (Math.random() - 0.5) * 12;
-                    clickX = box.x + (box.width * data.xRatio) + offsetX;
-                    clickY = box.y + (box.height * data.yRatio) + offsetY;
-                    console.log(`>> 使用注入脚本坐标: (${clickX.toFixed(2)}, ${clickY.toFixed(2)})`);
-                }
 
-                // 方法 A：Playwright 原生鼠标移动 + 点击（更真实）
-                try {
-                    const startX = Math.random() * 300 + 100;
-                    const startY = Math.random() * 300 + 100;
-                    await page.mouse.move(startX, startY);
-                    await page.waitForTimeout(100 + Math.random() * 200);
-
-                    const steps = 10 + Math.floor(Math.random() * 6);
-                    for (let i = 1; i <= steps; i++) {
-                        const t = i / steps;
-                        const easeT = t * t * (3 - 2 * t);
-                        const mx = startX + (clickX - startX) * easeT + (Math.random() - 0.5) * 15;
-                        const my = startY + (clickY - startY) * easeT + (Math.random() - 0.5) * 15;
-                        await page.mouse.move(mx, my);
-                        await page.waitForTimeout(30 + Math.random() * 50);
-                    }
-
-                    await page.waitForTimeout(150 + Math.random() * 200);
-                    await page.mouse.click(clickX + (Math.random() - 0.5) * 6, clickY + (Math.random() - 0.5) * 6);
-                    await page.waitForTimeout(200 + Math.random() * 200);
-                    await page.mouse.move(clickX + 50 + Math.random() * 50, clickY + (Math.random() - 0.5) * 50);
-
-                    console.log('>> Playwright 原生鼠标点击已发送。');
-                    return true;
+                    console.log('>> Playwright 所有位置尝试完毕，均未触发成功。');
                 } catch (mouseErr) {
-                    console.log('>> Playwright 鼠标点击失败，回退到 CDP:', mouseErr.message);
+                    console.log('>> Playwright 鼠标点击失败:', mouseErr.message);
                 }
 
-                // 方法 B：CDP 点击（备选）
-                const client = await page.context().newCDPSession(page);
-                const startX = Math.random() * 200 + 50;
-                const startY = Math.random() * 200 + 50;
-                const steps = 8 + Math.floor(Math.random() * 5);
-                for (let i = 0; i <= steps; i++) {
-                    const t = i / steps;
-                    const easeT = t * t * (3 - 2 * t);
-                    const mx = startX + (clickX - startX) * easeT + (Math.random() - 0.5) * 10;
-                    const my = startY + (clickY - startY) * easeT + (Math.random() - 0.5) * 10;
-                    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: mx, y: my });
-                    await new Promise(r => setTimeout(r, 20 + Math.random() * 40));
-                }
-                await new Promise(r => setTimeout(r, 100 + Math.random() * 150));
-                await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: clickX, y: clickY, button: 'left', clickCount: 1 });
-                await new Promise(r => setTimeout(r, 80 + Math.random() * 120));
-                await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: clickX, y: clickY, button: 'left', clickCount: 1 });
-                await new Promise(r => setTimeout(r, 100 + Math.random() * 150));
-                await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: clickX + (Math.random() - 0.5) * 30, y: clickY + (Math.random() - 0.5) * 30 });
-
-                console.log('>> CDP 点击已发送（含轨迹模拟）。');
-                await client.detach();
-                return true;
+                return false;
             }
         } catch (e) { }
     }
