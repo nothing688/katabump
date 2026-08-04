@@ -41,20 +41,37 @@ jobs:
         chmod +x mihomo
         ls -la mihomo
 
-        echo "=== 下载订阅 ==="
-        curl -sL -o sub.yaml "https://rgb9g.no-mad-sub.one/link/2OwpxAIH5WEwZKwG?clash=3&extend=1"
+        echo "=== 生成配置 (OVH 节点) ==="
         python3 << 'PYEOF'
         import yaml
-        try:
-            with open('sub.yaml', encoding='utf-8') as f:
-                sub = yaml.safe_load(f)
-        except Exception as e:
-            print('订阅解析失败: ' + str(e))
-            raise SystemExit(1)
-        proxies = sub.get('proxies', [])
-        if not proxies:
-            print('订阅中没有可用节点!')
-            raise SystemExit(1)
+        proxies = [
+            {
+                'name': 'Hysteria2-OVH',
+                'type': 'hysteria2',
+                'server': '51.75.118.170',
+                'port': 20102,
+                'password': '8ea29bda-a3e1-4539-9904-b8fbf7cef6f1',
+                'sni': 'www.bing.com',
+                'skip-cert-verify': True
+            },
+            {
+                'name': 'Reality-OVH',
+                'type': 'vless',
+                'server': '51.75.118.170',
+                'port': 20102,
+                'uuid': '8ea29bda-a3e1-4539-9904-b8fbf7cef6f1',
+                'network': 'tcp',
+                'tls': True,
+                'udp': True,
+                'flow': 'xtls-rprx-vision',
+                'servername': 'www.nazhumi.com',
+                'client-fingerprint': 'firefox',
+                'reality-opts': {
+                    'public-key': 'U0nqrnrABbaZg1l_Y3v7MfoMI4gj0HMQseUpc7pO2Es',
+                    'short-id': ''
+                }
+            }
+        ]
         names = [p['name'] for p in proxies]
         cfg = {
             'mixed-port': 7890,
@@ -64,8 +81,10 @@ jobs:
             'proxies': proxies,
             'proxy-groups': [{
                 'name': 'GLOBAL',
-                'type': 'select',
-                'proxies': names
+                'type': 'url-test',
+                'proxies': names,
+                'url': 'https://www.google.com',
+                'interval': 30
             }],
             'rules': ['MATCH,GLOBAL']
         }
