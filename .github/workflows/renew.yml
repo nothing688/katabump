@@ -20,10 +20,9 @@ jobs:
 
     - name: Install Dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y xvfb
+        # 只用 npm install。系统 Chrome (google-chrome) runner 已预装，
+        # xvfb 也已预装。去掉 playwright install-deps 避免 apt 下载 21MB 字体超时(10分钟)
         npm install
-        npx playwright install-deps chrome
 
     - name: Run Renew Script
       env:
