@@ -470,6 +470,32 @@ async function findAndClickDashboardAction(page, safeUsername) {
                 await page.addInitScript(INJECTED_SCRIPT);
             }
 
+            // === 登录态复用：优先用已保存的登录态，跳过登录和验证码 ===
+            let loginSuccess = false;
+            let useLoginState = false;
+            try {
+                const loginStateRaw = process.env.LOGIN_STATE || (fs.existsSync('login_state.json') ? fs.readFileSync('login_state.json', 'utf8') : null);
+                if (loginStateRaw) {
+                    const state = JSON.parse(loginStateRaw);
+                    if (state.cookies && state.cookies.length) {
+                        await context.clearCookies();
+                        await context.addCookies(state.cookies);
+                        await page.goto('https://dashboard.katabump.com/dashboard');
+                        await page.waitForTimeout(4000);
+                        if (!page.url().includes('/auth/login')) {
+                            console.log('>>> 登录态有效！跳过登录和验证码，直接进入 dashboard');
+                            useLoginState = true;
+                            loginSuccess = true;
+                        } else {
+                            console.log('>>> 登录态已过期，将走正常登录流程');
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log('登录态处理失败:', e.message);
+            }
+
+            if (!useLoginState) {
             // --- 登录逻辑 ---
             if (page.url().includes('dashboard')) {
                 await page.goto('https://dashboard.katabump.com/auth/logout');
@@ -486,7 +512,6 @@ async function findAndClickDashboardAction(page, safeUsername) {
             }
 
             // 修复 7：登录支持 Turnstile 失败重试
-            let loginSuccess = false;
             for (let loginAttempt = 1; loginAttempt <= 3; loginAttempt++) {
                 console.log(`\n[登录尝试 ${loginAttempt}/3] 正在输入凭据...`);
                 try {
@@ -645,6 +670,7 @@ async function findAndClickDashboardAction(page, safeUsername) {
                     break;
                 }
             }
+            } // end if (!useLoginState)
 
             if (!loginSuccess) {
                 console.log('登录未成功，跳过 dashboard 入口查找。');
