@@ -212,11 +212,15 @@ async function launchChrome() {
         '--disable-features=IsolateOrigins,site-per-process',
         '--disable-blink-features=AutomationControlled',
         '--no-zygote',
-        '--user-data-dir=/tmp/chrome_user_data', // 必须指定用户数据目录，否则远程调试可能失败
+        // 借鉴 kingenbomb/Nodes 的"真头假隐"思路: 浏览器真实渲染 (Turnstile 检测通过),
+        // 但窗口挪到屏幕外, 用户完全不可见. SHOW_WINDOW=true 时不挪 (调试用)
+        ...(process.env.SHOW_WINDOW === 'true' ? [] : ['--window-position=-32000,-32000']),
         // 加载 turnstilePatch 扩展, 修补 screenX/screenY 让 Turnstile 走 auto 模式
         `--load-extension=${path.join(__dirname, 'turnstilePatch')}`,
         `--disable-extensions-except=${path.join(__dirname, 'turnstilePatch')}`
     ];
+    // 必须指定 --user-data-dir 远程调试才生效. Windows 用 os.tmpdir(), Linux 用 /tmp
+    args.push(`--user-data-dir=${process.platform === 'win32' ? path.join(require('os').tmpdir(), 'chrome_user_data') : '/tmp/chrome_user_data'}`);
 
     if (PROXY_CONFIG) {
         args.push(`--proxy-server=${PROXY_CONFIG.server}`);
