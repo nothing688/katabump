@@ -21,90 +21,24 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y xvfb python3-yaml
+        sudo apt-get install -y xvfb
         npm install
         npx playwright install-deps chrome
 
-    - name: Run Renew Script (with mihomo proxy)
+    - name: Run Renew Script
       env:
         # 修复：GitHub Actions 容器没有 DBus session bus，需要设置为 /dev/null
         DBUS_SESSION_BUS_ADDRESS: /dev/null
         # 将 USERS_JSON 配置在 GitHub Repository Secrets 中
         # 格式: [{"username": "xxx", "password": "xxx"}, ...]
         USERS_JSON: ${{ secrets.USERS_JSON }}
+        # 登录态 (从本地登录后导出的 login_state.json 内容)
+        # 用于跳过登录页和 Cloudflare 验证码
+        LOGIN_STATE: ${{ secrets.LOGIN_STATE }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-      run: |
-        echo "=== 下载 mihomo ==="
-        curl -sL -o mihomo.gz https://github.com/MetaCubeX/mihomo/releases/download/v1.19.29/mihomo-linux-amd64-v1.19.29.gz
-        gunzip -f mihomo.gz
-        chmod +x mihomo
-        ls -la mihomo
-
-        echo "=== 生成配置 (OVH 节点) ==="
-        python3 << 'PYEOF'
-        import yaml
-        proxies = [
-            {
-                'name': 'Hysteria2-OVH',
-                'type': 'hysteria2',
-                'server': '51.75.118.170',
-                'port': 20102,
-                'password': '8ea29bda-a3e1-4539-9904-b8fbf7cef6f1',
-                'sni': 'www.bing.com',
-                'skip-cert-verify': True
-            },
-            {
-                'name': 'Reality-OVH',
-                'type': 'vless',
-                'server': '51.75.118.170',
-                'port': 20102,
-                'uuid': '8ea29bda-a3e1-4539-9904-b8fbf7cef6f1',
-                'network': 'tcp',
-                'tls': True,
-                'udp': True,
-                'flow': 'xtls-rprx-vision',
-                'servername': 'www.nazhumi.com',
-                'client-fingerprint': 'firefox',
-                'reality-opts': {
-                    'public-key': 'U0nqrnrABbaZg1l_Y3v7MfoMI4gj0HMQseUpc7pO2Es',
-                    'short-id': ''
-                }
-            }
-        ]
-        names = [p['name'] for p in proxies]
-        cfg = {
-            'mixed-port': 7890,
-            'allow-lan': False,
-            'mode': 'rule',
-            'log-level': 'warning',
-            'proxies': proxies,
-            'proxy-groups': [{
-                'name': 'GLOBAL',
-                'type': 'url-test',
-                'proxies': names,
-                'url': 'https://www.google.com',
-                'interval': 30
-            }],
-            'rules': ['MATCH,GLOBAL']
-        }
-        with open('mihomo.yaml', 'w', encoding='utf-8') as f:
-            yaml.safe_dump(cfg, f, allow_unicode=True)
-        print('配置生成成功: ' + str(len(proxies)) + ' 个节点')
-        PYEOF
-
-        echo "=== 启动 mihomo ==="
-        nohup ./mihomo -d . -f mihomo.yaml > mihomo.log 2>&1 &
-        sleep 8
-        code=$(curl -x http://127.0.0.1:7890 -s -o /dev/null -w "%{http_code}" --max-time 15 https://www.google.com 2>/dev/null || echo "fail")
-        echo "mihomo 代理访问 Google: $code"
-        echo "--- mihomo 日志 ---"
-        cat mihomo.log || true
-
-        echo "=== 运行脚本 ==="
-        export HTTP_PROXY=http://127.0.0.1:7890
-        export HTTPS_PROXY=http://127.0.0.1:7890
-        xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node action_renew.js
+      # 使用 xvfb-run 模拟有头环境运行
+      run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node action_renew.js
 
     - name: Upload Screenshots
       if: always()
