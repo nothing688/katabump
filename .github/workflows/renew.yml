@@ -27,6 +27,9 @@ jobs:
       
     - name: Run Renew Script
       env:
+        # 修复：GitHub Actions 容器没有 DBus session bus，需要设置为 /dev/null
+        # 否则 Chrome 会报错：Failed to connect to the bus
+        DBUS_SESSION_BUS_ADDRESS: /dev/null
         # 将 USERS_JSON 配置在 GitHub Repository Secrets 中
         # 格式: [{"username": "xxx", "password": "xxx"}, ...]
         USERS_JSON: ${{ secrets.USERS_JSON }}
