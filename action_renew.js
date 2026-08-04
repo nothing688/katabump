@@ -275,61 +275,79 @@ async function attemptTurnstileCdp(page) {
                 const box = await iframeElement.boundingBox();
                 if (!box) continue;
 
-                // 修复 9：添加随机偏移，模拟真实点击位置（不要每次都点正中心）
-                const offsetX = (Math.random() - 0.5) * 12; // ±6px
-                const offsetY = (Math.random() - 0.5) * 12;
-                const clickX = box.x + (box.width * data.xRatio) + offsetX;
-                const clickY = box.y + (box.height * data.yRatio) + offsetY;
+                // 修复 11：优先使用 Playwright 原生鼠标 API（比 CDP 更难被检测）
+                // 同时尝试通过 iframe 内真实 checkbox 元素计算精确坐标
+                let clickX, clickY;
+                try {
+                    const cbRect = await frame.evaluate(() => {
+                        const cb = document.querySelector('input[type="checkbox"]');
+                        if (!cb) return null;
+                        const r = cb.getBoundingClientRect();
+                        return { left: r.left, top: r.top, width: r.width, height: r.height };
+                    });
+                    if (cbRect && cbRect.width > 0) {
+                        clickX = box.x + cbRect.left + cbRect.width / 2;
+                        clickY = box.y + cbRect.top + cbRect.height / 2;
+                        console.log(`>> 使用 iframe 内 checkbox 真实坐标: (${clickX.toFixed(2)}, ${clickY.toFixed(2)})`);
+                    } else {
+                        throw new Error('checkbox rect 无效');
+                    }
+                } catch (e) {
+                    // 备选：用注入脚本计算的比例
+                    const offsetX = (Math.random() - 0.5) * 12;
+                    const offsetY = (Math.random() - 0.5) * 12;
+                    clickX = box.x + (box.width * data.xRatio) + offsetX;
+                    clickY = box.y + (box.height * data.yRatio) + offsetY;
+                    console.log(`>> 使用注入脚本坐标: (${clickX.toFixed(2)}, ${clickY.toFixed(2)})`);
+                }
 
-                console.log(`>> 计算点击坐标: (${clickX.toFixed(2)}, ${clickY.toFixed(2)})`);
+                // 方法 A：Playwright 原生鼠标移动 + 点击（更真实）
+                try {
+                    const startX = Math.random() * 300 + 100;
+                    const startY = Math.random() * 300 + 100;
+                    await page.mouse.move(startX, startY);
+                    await page.waitForTimeout(100 + Math.random() * 200);
 
+                    const steps = 10 + Math.floor(Math.random() * 6);
+                    for (let i = 1; i <= steps; i++) {
+                        const t = i / steps;
+                        const easeT = t * t * (3 - 2 * t);
+                        const mx = startX + (clickX - startX) * easeT + (Math.random() - 0.5) * 15;
+                        const my = startY + (clickY - startY) * easeT + (Math.random() - 0.5) * 15;
+                        await page.mouse.move(mx, my);
+                        await page.waitForTimeout(30 + Math.random() * 50);
+                    }
+
+                    await page.waitForTimeout(150 + Math.random() * 200);
+                    await page.mouse.click(clickX + (Math.random() - 0.5) * 6, clickY + (Math.random() - 0.5) * 6);
+                    await page.waitForTimeout(200 + Math.random() * 200);
+                    await page.mouse.move(clickX + 50 + Math.random() * 50, clickY + (Math.random() - 0.5) * 50);
+
+                    console.log('>> Playwright 原生鼠标点击已发送。');
+                    return true;
+                } catch (mouseErr) {
+                    console.log('>> Playwright 鼠标点击失败，回退到 CDP:', mouseErr.message);
+                }
+
+                // 方法 B：CDP 点击（备选）
                 const client = await page.context().newCDPSession(page);
-
-                // 修复 10：模拟 human-like 鼠标移动轨迹，从页面随机位置移动到目标
                 const startX = Math.random() * 200 + 50;
                 const startY = Math.random() * 200 + 50;
-                const steps = 8 + Math.floor(Math.random() * 5); // 8-12 步
+                const steps = 8 + Math.floor(Math.random() * 5);
                 for (let i = 0; i <= steps; i++) {
                     const t = i / steps;
-                    // 使用缓动函数让移动更自然
                     const easeT = t * t * (3 - 2 * t);
                     const mx = startX + (clickX - startX) * easeT + (Math.random() - 0.5) * 10;
                     const my = startY + (clickY - startY) * easeT + (Math.random() - 0.5) * 10;
-                    await client.send('Input.dispatchMouseEvent', {
-                        type: 'mouseMoved',
-                        x: mx,
-                        y: my
-                    });
+                    await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: mx, y: my });
                     await new Promise(r => setTimeout(r, 20 + Math.random() * 40));
                 }
-
                 await new Promise(r => setTimeout(r, 100 + Math.random() * 150));
-
-                await client.send('Input.dispatchMouseEvent', {
-                    type: 'mousePressed',
-                    x: clickX,
-                    y: clickY,
-                    button: 'left',
-                    clickCount: 1
-                });
-
+                await client.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: clickX, y: clickY, button: 'left', clickCount: 1 });
                 await new Promise(r => setTimeout(r, 80 + Math.random() * 120));
-
-                await client.send('Input.dispatchMouseEvent', {
-                    type: 'mouseReleased',
-                    x: clickX,
-                    y: clickY,
-                    button: 'left',
-                    clickCount: 1
-                });
-
-                // 点击后轻微移动，模拟真人行为
+                await client.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: clickX, y: clickY, button: 'left', clickCount: 1 });
                 await new Promise(r => setTimeout(r, 100 + Math.random() * 150));
-                await client.send('Input.dispatchMouseEvent', {
-                    type: 'mouseMoved',
-                    x: clickX + (Math.random() - 0.5) * 30,
-                    y: clickY + (Math.random() - 0.5) * 30
-                });
+                await client.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: clickX + (Math.random() - 0.5) * 30, y: clickY + (Math.random() - 0.5) * 30 });
 
                 console.log('>> CDP 点击已发送（含轨迹模拟）。');
                 await client.detach();
