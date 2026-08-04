@@ -70,6 +70,44 @@ const USER_DATA_DIR = process.env.CHROME_USER_DATA_DIR || (
         : '/tmp/katabump_chrome_data'
 );
 
+// === 运行频率检查: katabump 续期周期是每 4 天 (实测页面显示 'Every 4 days'),
+// === 每天跑也是空跑. 这里做轻量级检查: 距上次成功运行不到 4 天则跳过,
+// === 配合 Windows 计划任务每天触发, 节省 Chrome 启动 + Turnstile/ALTCHA 验证开销.
+// === FORCE_RUN=true 环境变量可强制跳过此检查.
+const RUN_INTERVAL_MS = 4 * 24 * 60 * 60 * 1000;  // 4 天
+const LAST_RUN_FILE = process.env.LAST_RUN_FILE || '.last_run';
+
+function shouldRunNow() {
+    if (process.env.FORCE_RUN === 'true') {
+        console.log('[FORCE_RUN=true] 跳过频率检查, 强制运行');
+        return true;
+    }
+    try {
+        if (!fs.existsSync(LAST_RUN_FILE)) return true;
+        const last = parseInt(fs.readFileSync(LAST_RUN_FILE, 'utf8').trim());
+        if (!Number.isFinite(last) || last <= 0) return true;
+        const elapsed = Date.now() - last;
+        if (elapsed < RUN_INTERVAL_MS) {
+            const hoursElapsed = (elapsed / 3600000).toFixed(1);
+            const hoursLeft = ((RUN_INTERVAL_MS - elapsed) / 3600000).toFixed(1);
+            console.log(`⏭️  距上次成功运行 ${hoursElapsed} 小时 (< 4 天), 跳过本次运行`);
+            console.log(`   下次可运行: 约 ${hoursLeft} 小时后`);
+            console.log(`   强制重跑: FORCE_RUN=true node action_renew.js`);
+            return false;
+        }
+        return true;
+    } catch (e) {
+        console.log(`⚠️ 频率检查异常: ${e.message}, 默认继续运行`);
+        return true;
+    }
+}
+
+function markRunDone() {
+    try {
+        fs.writeFileSync(LAST_RUN_FILE, String(Date.now()));
+    } catch (e) { /* 静默忽略, 不影响主流程 */ }
+}
+
 if (HTTP_PROXY) {
     try {
         const proxyUrl = new URL(HTTP_PROXY);
@@ -436,6 +474,11 @@ async function findAndClickDashboardAction(page, safeUsername) {
             console.error('[代理] 代理无效，终止运行。');
             process.exit(1);
         }
+    }
+
+    // 运行频率检查: 距上次成功运行 < 4 天则跳过 (可在 Windows 计划任务每天调, 几乎零成本)
+    if (!shouldRunNow()) {
+        process.exit(0);
     }
 
     await launchChrome();
@@ -849,6 +892,7 @@ async function findAndClickDashboardAction(page, safeUsername) {
         console.log(`用户处理完成\n`);
     }
 
+    markRunDone();
     console.log('完成。');
     await browser.close();
     process.exit(0);
