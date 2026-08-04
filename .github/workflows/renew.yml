@@ -21,24 +21,77 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y xvfb
+        sudo apt-get install -y xvfb python3-yaml
         npm install
         npx playwright install-deps chrome
       
-    - name: Run Renew Script
+    - name: Run Renew Script (with mihomo proxy)
       env:
         # 修复：GitHub Actions 容器没有 DBus session bus，需要设置为 /dev/null
-        # 否则 Chrome 会报错：Failed to connect to the bus
         DBUS_SESSION_BUS_ADDRESS: /dev/null
         # 将 USERS_JSON 配置在 GitHub Repository Secrets 中
         # 格式: [{"username": "xxx", "password": "xxx"}, ...]
         USERS_JSON: ${{ secrets.USERS_JSON }}
-        HTTP_PROXY: ${{ secrets.HTTP_PROXY }}
-        HTTPS_PROXY: ${{ secrets.HTTP_PROXY }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-      # 使用 xvfb-run 模拟有头环境运行
-      run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node action_renew.js
+      run: |
+        # ===== 1. 下载 mihomo (Clash.Meta) =====
+        echo "=== 下载 mihomo ==="
+        curl -sL -o mihomo.gz https://github.com/MetaCubeX/mihomo/releases/download/v1.19.29/mihomo-linux-amd64-v1.19.29.gz
+        gunzip -f mihomo.gz
+        chmod +x mihomo
+        ls -la mihomo
+
+        # ===== 2. 下载订阅并生成全局代理配置 =====
+        echo "=== 下载订阅 ==="
+        curl -sL -o sub.yaml "https://rgb9g.no-mad-sub.one/link/2OwpxAIH5WEwZKwG?clash=3&extend=1"
+        python3 << 'PYEOF'
+import yaml
+try:
+    with open('sub.yaml', encoding='utf-8') as f:
+        sub = yaml.safe_load(f)
+except Exception as e:
+    print(f'订阅解析失败: {e}')
+    raise SystemExit(1)
+proxies = sub.get('proxies', [])
+if not proxies:
+    print('订阅中没有可用节点!')
+    raise SystemExit(1)
+names = [p['name'] for p in proxies]
+cfg = {
+    'mixed-port': 7890,
+    'allow-lan': False,
+    'mode': 'rule',
+    'log-level': 'warning',
+    'proxies': proxies,
+    'proxy-groups': [{
+        'name': 'GLOBAL',
+        'type': 'select',
+        'proxies': names
+    }],
+    'rules': ['MATCH,GLOBAL']
+}
+with open('mihomo.yaml', 'w', encoding='utf-8') as f:
+    yaml.safe_dump(cfg, f, allow_unicode=True)
+print(f'配置生成成功: {len(proxies)} 个节点')
+for n in names:
+    print('  -', n)
+PYEOF
+
+        # ===== 3. 后台启动 mihomo =====
+        echo "=== 启动 mihomo ==="
+        nohup ./mihomo -d . -f mihomo.yaml > mihomo.log 2>&1 &
+        sleep 8
+        code=$(curl -x http://127.0.0.1:7890 -s -o /dev/null -w "%{http_code}" --max-time 15 https://www.google.com 2>/dev/null || echo "fail")
+        echo "mihomo 代理访问 Google: $code"
+        echo "--- mihomo 日志 ---"
+        cat mihomo.log || true
+
+        # ===== 4. 运行续期脚本 (走本地 mihomo 代理) =====
+        echo "=== 运行脚本 ==="
+        export HTTP_PROXY=http://127.0.0.1:7890
+        export HTTPS_PROXY=http://127.0.0.1:7890
+        xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node action_renew.js
 
     - name: Upload Screenshots
       if: always()
