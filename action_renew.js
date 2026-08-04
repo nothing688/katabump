@@ -156,24 +156,28 @@ async function checkProxy ( ) {
 }
 
 function checkPort ( port ) {
-    return new Promise ( ( resolve ) => {
-        const portNum = parseInt ( String ( port ).replace ( /[^0-9]/g, "" ), 10 );
-        if (!portNum || portNum < 1 || portNum > 65535 ) {
-            console.log ( '[checkPort] 端口无效: ' + port );
+    return new Promise ( function ( resolve ) {
+        var s = String ( port );
+        var digits = "";
+        for ( var i = 0; i < s.length; i++) {
+            var ch = s.charAt ( i );
+            if ( ch >= "0" && ch <= "9" ) digits += ch;
+        }
+        var portNum = parseInt ( digits, 10 );
+        if (!portNum ) {
+            console.log ( "[checkPort] 无效端口: " + port );
             return resolve ( false );
         }
-        console.log ( '[checkPort] TCP测试 127.0.0.1:' + portNum );
-        const net = require ( 'net' );
-        const socket = new net.Socket ( );
-        socket.setTimeout ( 3000 );
-        socket.once ( 'connect', function ( ) { socket.destroy ( ); resolve ( true ); } );
-        socket.once ( 'error', function ( ) { socket.destroy ( ); resolve ( false ); } );
-        socket.once ( 'timeout', function ( ) { socket.destroy ( ); resolve ( false ); } );
-        socket.connect ( portNum, '127.0.0.1' );
+        console.log ( "[checkPort] TCP测试 127.0.0.1:" + portNum );
+        var net = require ( "net" );
+        var sock = new net.Socket ( );
+        sock.setTimeout ( 3000 );
+        sock.on ( "connect", function ( ) { sock.destroy ( ); resolve ( true ); } );
+        sock.on ( "error", function ( ) { sock.destroy ( ); resolve ( false ); } );
+        sock.on ( "timeout", function ( ) { sock.destroy ( ); resolve ( false ); } );
+        sock.connect ( portNum, "127.0.0.1" );
     } );
 }
-
-
 
 async function launchChrome ( ) {
     console.log ( '检查 Chrome 是否已在端口 ' + DEBUG_PORT + ' 上运行...' );
