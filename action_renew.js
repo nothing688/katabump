@@ -157,17 +157,22 @@ async function checkProxy ( ) {
 
 function checkPort ( port ) {
     return new Promise ( ( resolve ) => {
-        // === 防御性修复：清理 port 变量 + 用 127.0.0.1 替代 localhost ===
-        const cleanPort = String ( port ).replace ( /[^0-9]/g, '' );
-        const targetUrl = `http://127.0.0.1: ${ cleanPort } /json/version`;
-        console.log ( `[checkPort] 检测端口: ${ targetUrl } ` );
-        const req = http.get ( targetUrl, ( res ) => {
-            resolve ( true );
-        } );
-        req.on ( 'error', ( ) => resolve ( false ) );
-        req.end ( );
+        const portNum = parseInt ( String ( port ).replace ( /[^0-9]/g, "" ), 10 );
+        if (!portNum || portNum < 1 || portNum > 65535 ) {
+            console.log ( '[checkPort] 端口无效: ' + port );
+            return resolve ( false );
+        }
+        console.log ( '[checkPort] TCP测试 127.0.0.1:' + portNum );
+        const net = require ( 'net' );
+        const socket = new net.Socket ( );
+        socket.setTimeout ( 3000 );
+        socket.once ( 'connect', function ( ) { socket.destroy ( ); resolve ( true ); } );
+        socket.once ( 'error', function ( ) { socket.destroy ( ); resolve ( false ); } );
+        socket.once ( 'timeout', function ( ) { socket.destroy ( ); resolve ( false ); } );
+        socket.connect ( portNum, '127.0.0.1' );
     } );
 }
+
 
 
 async function launchChrome ( ) {
