@@ -392,7 +392,7 @@ async function findAndClickDashboardAction(page, safeUsername) {
     console.log('[Dashboard] 未找到任何已知的 dashboard 入口按钮');
     try {
         const debugShot = path.join(photoDir, `${safeUsername}_dashboard_no_action.png`);
-        await page.screenshot({ path: debugShot, fullPage: true });
+        await page.screenshot({ path: debugShot, fullPage: true, timeout: 15000 });
         console.log('[Dashboard] 调试截图: ' + debugShot);
         console.log('[Dashboard] 当前 URL: ' + page.url());
         console.log('[Dashboard] 当前标题: ' + await page.title());
@@ -604,7 +604,7 @@ async function findAndClickDashboardAction(page, safeUsername) {
                         if (await errorMsg.isVisible({ timeout: 1000 })) {
                             console.error(`   >> 登录失败: 用户 ${user.username} 账号或密码错误`);
                             const failShotPath = path.join(photoDir, `${safeUsername}.png`);
-                            try { await page.screenshot({ path: failShotPath, fullPage: true }); } catch (e) { }
+                            try { await page.screenshot({ path: failShotPath, fullPage: true, timeout: 15000 }); } catch (e) { }
 
                             await sendTelegramMessage(`登录失败\n用户: ${user.username}\n原因: 账号或密码错误`, failShotPath);
 
@@ -629,7 +629,7 @@ async function findAndClickDashboardAction(page, safeUsername) {
                     if (currentUrl.includes('error=captcha')) {
                         console.log('   >> 登录失败：验证码未通过 (error=captcha)，准备重试...');
                         const captchaShot = path.join(photoDir, `${safeUsername}_captcha_fail_${loginAttempt}.png`);
-                        try { await page.screenshot({ path: captchaShot, fullPage: true }); } catch (e) { }
+                        try { await page.screenshot({ path: captchaShot, fullPage: true, timeout: 15000 }); } catch (e) { }
 
                         if (loginAttempt < 3) {
                             console.log('   >> 刷新页面后重试登录...');
@@ -647,7 +647,7 @@ async function findAndClickDashboardAction(page, safeUsername) {
                     // 其他原因仍在登录页
                     console.log('   >> 登录后仍在登录页，可能登录失败或需要额外验证');
                     const loginDebugShot = path.join(photoDir, `${safeUsername}_login_stuck_${loginAttempt}.png`);
-                    try { await page.screenshot({ path: loginDebugShot, fullPage: true }); } catch (e) { }
+                    try { await page.screenshot({ path: loginDebugShot, fullPage: true, timeout: 15000 }); } catch (e) { }
 
                     if (loginAttempt < 3) {
                         console.log('   >> 刷新后重试...');
@@ -713,36 +713,37 @@ async function findAndClickDashboardAction(page, safeUsername) {
                         if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 5 });
                     } catch (e) { }
 
-                    // B. 找 Turnstile (小重试)
-                    console.log('正在检查 Turnstile (使用 CDP 绕过)...');
-                    let cdpClickResult = false;
-                    for (let findAttempt = 0; findAttempt < 5; findAttempt++) {
-                        cdpClickResult = await attemptTurnstileCdp(page);
-                        if (cdpClickResult) break;
-                        console.log(`   >> [寻找尝试 ${findAttempt + 1}/5] 尚未找到 Turnstile 复选框...`);
-                        await page.waitForTimeout(1000);
-                    }
+                    // B. 处理 ALTCHA 验证码 (续期模态框使用 ALTCHA, 非 Turnstile)
+                    console.log('正在处理 ALTCHA 验证码...');
+                    let altchaOk = false;
+                    try {
+                        // 1. JS 触发 checkbox 原生 click (无视 CSS 隐藏)
+                        const clickRes = await page.evaluate(() => {
+                            const input = document.querySelector('.altcha-checkbox input[type=checkbox]');
+                            if (!input) return 'no-checkbox';
+                            if (!input.checked) { input.click(); return 'clicked'; }
+                            return 'already-checked';
+                        });
+                        console.log('   >> ALTCHA checkbox:', clickRes);
 
-                    let isTurnstileSuccess = false;
-                    if (cdpClickResult) {
-                        console.log('   >> CDP 点击生效。等待 8秒 Cloudflare 检查...');
-                        await page.waitForTimeout(8000);
-                    } else {
-                        console.log('   >> 重试后仍未确认 Turnstile 复选框。');
-                    }
-
-                    // C. 检查 Success 标志
-                    const frames = page.frames();
-                    for (const f of frames) {
-                        if (f.url().includes('cloudflare')) {
-                            try {
-                                if (await f.getByText('Success!', { exact: false }).isVisible({ timeout: 500 })) {
-                                    console.log('   >> 在 Turnstile iframe 中检测到 "Success!"。');
-                                    isTurnstileSuccess = true;
-                                    break;
-                                }
-                            } catch (e) { }
+                        // 2. 等待 widget 计算 PoW 并填入 token
+                        for (let i = 0; i < 20; i++) {
+                            await page.waitForTimeout(1000);
+                            const token = await page.evaluate(() => {
+                                const input = document.querySelector('input[name="altcha"]');
+                                return (input && input.value && input.value.length > 20) ? input.value : null;
+                            });
+                            if (token) {
+                                console.log(`   >> ALTCHA 验证通过 (耗时 ${i + 1}s)`);
+                                altchaOk = true;
+                                break;
+                            }
                         }
+                    } catch (e) {
+                        console.log('   >> ALTCHA 处理出错:', e.message);
+                    }
+                    if (!altchaOk) {
+                        console.log('   >> ALTCHA 未在预期时间内通过，尝试直接提交...');
                     }
 
                     // D. 准备点击确认
@@ -753,7 +754,7 @@ async function findAndClickDashboardAction(page, safeUsername) {
                         const safeUser = user.username.replace(/[^a-z0-9]/gi, '_');
                         const tsScreenshotName = `${safeUser}_Turnstile_${attempt}.png`;
                         try {
-                            await page.screenshot({ path: path.join(photoDir, tsScreenshotName), fullPage: true });
+                            await page.screenshot({ path: path.join(photoDir, tsScreenshotName), fullPage: true, timeout: 15000 });
                             console.log(`   >> 快照已保存: ${tsScreenshotName}`);
                         } catch (e) { }
 
@@ -782,7 +783,7 @@ async function findAndClickDashboardAction(page, safeUsername) {
                                     // 截图证明
                                     const safeUser = user.username.replace(/[^a-z0-9]/gi, '_');
                                     const skipShotPath = path.join(photoDir, `${safeUser}_skip.png`);
-                                    try { await page.screenshot({ path: skipShotPath, fullPage: true }); } catch (e) { }
+                                    try { await page.screenshot({ path: skipShotPath, fullPage: true, timeout: 15000 }); } catch (e) { }
 
                                     await sendTelegramMessage(`暂无法续期 (跳过)\n用户: ${user.username}\n原因: 还没到时间\n下次可用: ${dateStr}`, skipShotPath);
 
@@ -814,7 +815,7 @@ async function findAndClickDashboardAction(page, safeUsername) {
                             // 截图成功状态
                             const safeUser = user.username.replace(/[^a-z0-9]/gi, '_');
                             const successShotPath = path.join(photoDir, `${safeUser}_success.png`);
-                            try { await page.screenshot({ path: successShotPath, fullPage: true }); } catch (e) { }
+                            try { await page.screenshot({ path: successShotPath, fullPage: true, timeout: 15000 }); } catch (e) { }
 
                             await sendTelegramMessage(`续期成功\n用户: ${user.username}\n状态: 服务器已成功续期！`, successShotPath);
                             renewSuccess = true;
@@ -844,7 +845,7 @@ async function findAndClickDashboardAction(page, safeUsername) {
         // Snapshot before handling next user
         const screenshotPath = path.join(photoDir, `${safeUsername}.png`);
         try {
-            await page.screenshot({ path: screenshotPath, fullPage: true });
+            await page.screenshot({ path: screenshotPath, fullPage: true, timeout: 15000 });
             console.log(`截图已保存至: ${screenshotPath}`);
         } catch (e) {
             console.log('截图失败:', e.message);
