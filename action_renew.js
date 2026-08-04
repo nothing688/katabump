@@ -60,6 +60,25 @@ process.env.NO_PROXY = 'localhost,127.0.0.1';
 const HTTP_PROXY = (process.env.HTTP_PROXY || '').trim();
 let PROXY_CONFIG = null;
 
+// === 自动登录态保存: 登录成功后 (无论复用登录态还是正常登录) 自动保存 cookies 到 login_state.json,
+// === 实现 14 天自愈循环. 下次运行时若 katabump_s 过期, 会自动走登录流程再次保存.
+async function saveLoginStateAuto(context) {
+    try {
+        const file = process.env.LOGIN_STATE_FILE || 'login_state.json';
+        const cookies = await context.cookies();
+        if (!cookies.length) return false;
+        const state = { cookies, origins: [], createdAt: new Date().toISOString() };
+        const tmp = file + '.tmp';
+        fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
+        fs.renameSync(tmp, file);  // 原子写入, 避免文件损坏
+        console.log(`>>> 登录态已自动保存到 ${file} (${cookies.length} 个 cookie)`);
+        return true;
+    } catch (e) {
+        console.log('>>> 登录态自动保存失败:', e.message);
+        return false;
+    }
+}
+
 if (HTTP_PROXY) {
     try {
         const proxyUrl = new URL(HTTP_PROXY);
@@ -856,6 +875,16 @@ async function findAndClickDashboardAction(page, safeUsername) {
             console.log(`截图已保存至: ${screenshotPath}`);
         } catch (e) {
             console.log('截图失败:', e.message);
+        }
+
+        // 登录成功则自动保存登录态, 形成 14 天自愈循环
+        // 只要不在登录页 (说明本次成功进 dashboard), 就把当前 cookies 写入 login_state.json
+        try {
+            if (page && !page.isClosed() && !page.url().includes('/auth/login')) {
+                await saveLoginStateAuto(context);
+            }
+        } catch (e) {
+            console.log('保存登录态时出错:', e.message);
         }
 
         console.log(`用户处理完成\n`);
