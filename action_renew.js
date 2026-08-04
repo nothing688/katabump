@@ -275,12 +275,35 @@ async function attemptTurnstileCdp(page) {
                 const box = await iframeElement.boundingBox();
                 if (!box) continue;
 
-                const clickX = box.x + (box.width * data.xRatio);
-                const clickY = box.y + (box.height * data.yRatio);
+                // 修复 9：添加随机偏移，模拟真实点击位置（不要每次都点正中心）
+                const offsetX = (Math.random() - 0.5) * 12; // ±6px
+                const offsetY = (Math.random() - 0.5) * 12;
+                const clickX = box.x + (box.width * data.xRatio) + offsetX;
+                const clickY = box.y + (box.height * data.yRatio) + offsetY;
 
                 console.log(`>> 计算点击坐标: (${clickX.toFixed(2)}, ${clickY.toFixed(2)})`);
 
                 const client = await page.context().newCDPSession(page);
+
+                // 修复 10：模拟 human-like 鼠标移动轨迹，从页面随机位置移动到目标
+                const startX = Math.random() * 200 + 50;
+                const startY = Math.random() * 200 + 50;
+                const steps = 8 + Math.floor(Math.random() * 5); // 8-12 步
+                for (let i = 0; i <= steps; i++) {
+                    const t = i / steps;
+                    // 使用缓动函数让移动更自然
+                    const easeT = t * t * (3 - 2 * t);
+                    const mx = startX + (clickX - startX) * easeT + (Math.random() - 0.5) * 10;
+                    const my = startY + (clickY - startY) * easeT + (Math.random() - 0.5) * 10;
+                    await client.send('Input.dispatchMouseEvent', {
+                        type: 'mouseMoved',
+                        x: mx,
+                        y: my
+                    });
+                    await new Promise(r => setTimeout(r, 20 + Math.random() * 40));
+                }
+
+                await new Promise(r => setTimeout(r, 100 + Math.random() * 150));
 
                 await client.send('Input.dispatchMouseEvent', {
                     type: 'mousePressed',
@@ -290,7 +313,7 @@ async function attemptTurnstileCdp(page) {
                     clickCount: 1
                 });
 
-                await new Promise(r => setTimeout(r, 50 + Math.random() * 100));
+                await new Promise(r => setTimeout(r, 80 + Math.random() * 120));
 
                 await client.send('Input.dispatchMouseEvent', {
                     type: 'mouseReleased',
@@ -300,7 +323,15 @@ async function attemptTurnstileCdp(page) {
                     clickCount: 1
                 });
 
-                console.log('>> CDP 点击已发送。');
+                // 点击后轻微移动，模拟真人行为
+                await new Promise(r => setTimeout(r, 100 + Math.random() * 150));
+                await client.send('Input.dispatchMouseEvent', {
+                    type: 'mouseMoved',
+                    x: clickX + (Math.random() - 0.5) * 30,
+                    y: clickY + (Math.random() - 0.5) * 30
+                });
+
+                console.log('>> CDP 点击已发送（含轨迹模拟）。');
                 await client.detach();
                 return true;
             }
