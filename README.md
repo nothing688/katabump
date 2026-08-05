@@ -2,136 +2,238 @@
 
 [English Version](README_EN.md) | [中文说明](README.md)
 
-这是一个用于自动续期 Katabump 服务器的自动化脚本。它利用 Playwright 和 CDP (Chrome DevTools Protocol) 技术来模拟用户操作，能够有效绕过 Cloudflare Turnstile 验证码，确保持续的服务器服务。
+这是一个用于自动续期 Katabump 服务器的自动化脚本。它利用 Playwright + CDP（Chrome DevTools Protocol）+ Cloudflare Turnstile 扩展来模拟真实用户操作，能够稳定绕过 Cloudflare Turnstile 验证码，并通过 ALTCHA PoW 自动验证，实现服务器续期的无人值守。
 
-支持 **Windows 本地运行** 和 **GitHub Actions 云端运行**。
+支持 **Windows 本地定时运行**（推荐）和 **GitHub Actions 云端运行**。
+
+---
 
 ## ✨ 特性
 
-- **智能过盾**: 通过 CDP 协议模拟真实鼠标轨迹和点击行为，结合屏幕坐标伪造，高成功率绕过 Cloudflare Turnstile。
-- **自动重试**: 内置严格的验证重试机制，如果验证失败会自动重启验证流程。
-- **多用户支持**: 支持配置多个账号批量续期。
-- **云端/本地**: 既可以在本地电脑跑，也可以利用 GitHub Actions 每天定时自动跑。
+- **真实浏览器，真头假隐**：窗口真实渲染满足 Cloudflare 检测，但通过 `--window-position=-32000,-32000` 隐藏在屏幕外，用户完全无感。
+- **智能过盾**：使用 `MouseEvent.screenX/screenY` 修补 + Shadow DOM Hook，让 Turnstile 走 auto 模式自动通过。
+- **ALTCHA 自动解**：续期前的 ALTCHA 工作量证明自动解出 token，3 秒完成。
+- **登录态持久化**：通过 Chrome `--user-data-dir` 自动保存 cookies，14 天免登录。
+- **4 天频率检查**：避免每天空跑浪费资源，Windows 计划任务每天触发，脚本内部自动判断。
+- **微信通知**：通过 WxPusher 推送图文消息（含截图），国内直达，无需翻墙。
+- **GitHub 作图床**：截图自动上传到 GitHub 仓库（raw.githubusercontent.com 国内访问快），上传成功即删除本地副本。
+- **错过自动补跑**：Windows 计划任务 `-StartWhenAvailable`，电脑关机后开机自动补跑。
 
 ---
 
-## 🚀 GitHub Actions 云端运行 (推荐)
+## 🚀 Windows 本地运行（推荐方案）
 
-这是最省心的方式，配置一次即可每天自动执行。
-
-1. **Fork 本仓库** 到你的 GitHub 账号。
-2. 进入你的仓库，点击 **Settings** -> **Secrets and variables** -> **Actions**。
-3. 点击 **New repository secret**，添加一个名为 `USERS_JSON` 的 Secret。
-4. **Value** 的格式必须是 JSON 数组（请尽量压缩为一行）：
-   ```json
-   [{"username": "your_email@example.com", "password": "your_password"}, {"username": "another@example.com", "password": "pwd"}]
-   ```
-5. **(可选) 配置代理**:
-   如果 GitHub Actions 的 IP 被屏蔽，或者你想使用特定的 IP 访问，可以添加名为 `HTTP_PROXY` 的 Secret。
-   - **格式**:
-     - 无认证: `http://ip:port`
-     -带认证: `http://username:password@ip:port`
-   - **说明**: 脚本会自动检测代理有效性，如果支持认证会自动处理。默认不启用。
-
-6. **(可选) Telegram 消息推送**:
-   如果你希望在续期成功、失败或跳过时收到 Telegram 通知（包含截图），请配置以下 Secret：
-   - `TG_BOT_TOKEN`: 你的 Telegram Bot Token (从 @BotFather 获取)。
-   - `TG_CHAT_ID`: 你的 Chat ID (用户 ID 或群组 ID)。
-   > 如果未配置，脚本将跳过发送通知。
-
-### 4. 运行结果与截图
-
-- **运行日志**: 在 Actions 中的 `Run Renew Script` 步骤查看。
-- **截图留存**: 每次运行（无论成功与否），通过 `Upload Screenshots` 步骤自动上传截图。
-  - 你可以在 Workflow 运行详情页的 **Artifacts** 区域下载 `screenshots` 压缩包。
-  - 每个账号对应一张截图（`username.png`），方便确认状态。
-
-5. 保存后，进入 **Actions** 页面，启用 Workflow。它会在**每天北京时间 08:00 (UTC 00:00)** 自动运行。
-6. 你也可以手动点击 "Run workflow" 立即测试。
-
----
-
-## 💻 Windows 本地运行指南
-
-如果你想在本地观察运行过程或进行调试，请按以下步骤操作。
+最稳定的方式：本地 Chrome + Windows 计划任务，每天 12:00 自动续期，微信收到结果通知。
 
 ### 1. 环境准备
 
-确保你已经安装了 [Node.js](https://nodejs.org/) (建议版本 v18+)。
+- [Node.js](https://nodejs.org/) v18+
+- [Google Chrome](https://www.google.com/chrome/) 已安装
+- [GitHub CLI](https://cli.github.com/) 已登录（用于 GitHub 图床）
 
 ### 2. 安装依赖
 
-在项目根目录打开终端 (PowerShell 或 CMD)，运行：
-
 ```bash
+cd katabump-fork
 npm install
 ```
 
 ### 3. 配置账号
 
-项目中有一个 `login.json.template` 模板文件。
+复制 `users.json.example` 为 `users.json`，填入你的账号：
 
-1. 将其**重命名**为 `login.json`。
-2. 用记事本或编辑器打开，填入你的账号密码：
-   ```json
-   [
-       {
-           "username": "myemail@gmail.com",
-           "password": "mypassword123"
-       }
-   ]
-   ```
-
-   > **注意**: `login.json` 已被加入 `.gitignore`，不会被上传到 GitHub，请放心使用。
-   >
-
-### 4. 配置 Chrome 路径
-
-打开 `renew.js` 文件，找到第 11-12 行：
-
-```javascript
-const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const USER_DATA_DIR = path.join(__dirname, 'ChromeData_Katabump');
-const HEADLESS = true;
+```json
+[
+  {"username": "your_email@example.com", "password": "your_password"}
+]
 ```
 
-* **CHROME_PATH**: 这是你本地 Chrome 浏览器的安装路径。如果你的安装位置不同，请务必修改！
-* **USER_DATA_DIR**:
-  * 这是一个用于存放 Script 运行时产生的浏览器数据（缓存、Cookie、登录状态等）的文件夹。
-  * **作用**: 它能让你的登录状态保持更久，不需要每次运行都重新输入密码。
-  * **能不能删？**: **可以删**。如果你想要重置所有状态（彻底清除缓存），只需删除这个文件夹即可。脚本下次运行时会自动重新创建它。
-* **HEADLESS**:
-  * `false`: 脚本运行时会弹出一个 Chrome 窗口，你可以看到它在做什么。
-  * `true`: (默认)脚本在后台无头运行，界面不可见（适合只想静默完成任务时开启）。
+> `users.json` 已被加入 `.gitignore`，不会被上传到 GitHub。
 
-### 3. 运行脚本
+**也可使用环境变量**（GitHub Actions Secret 兼容）：
+- `USERS_JSON`: JSON 字符串（优先级高于 `users.json`）
 
-如果你需要使用代理运行脚本，请设置环境变量 `HTTP_PROXY`：
+### 4. 配置 Chrome 路径（仅首次）
 
-**Powershell:**
+设置环境变量 `CHROME_PATH`：
+
 ```powershell
-$env:HTTP_PROXY="http://user:pass@127.0.0.1:7890"
-node renew.js
+$env:CHROME_PATH = "C:\Program Files\Google\Chrome\Application\chrome.exe"
 ```
 
-**CMD:**
-```cmd
-set HTTP_PROXY=http://user:pass@127.0.0.1:7890
-node renew.js
+脚本默认 Linux 用 `/usr/bin/google-chrome`，Windows 自动 fallback 到 `%TEMP%\katabump_chrome_data`。
+
+### 5. （可选）配置 WxPusher 微信通知
+
+**5.1 注册 WxPusher**
+
+1. 访问 https://wxpusher.zjiecode.com 注册
+2. 创建应用 → 拿到 `appToken`
+3. 微信扫码关注公众号 **wxpusher**
+4. 访问 https://wxpusher.zjiecode.com/zone 找到你的 `UID`
+
+**5.2 创建配置文件**
+
+复制 `wxpusher.example.json` 为 `wxpusher.json`，填入：
+
+```json
+{
+  "appToken": "AT_你的真实token",
+  "uids": ["UID_你的真实UID"],
+  "githubRepo": "nothing688/katabump",
+  "githubBranch": "main"
+}
 ```
 
-如果不设置代理，直接运行：
-```bash
-node renew.js
+> `wxpusher.json` 已被加入 `.gitignore`，不会被上传到 GitHub。
+
+**5.3 GitHub 图床准备**
+
+截图会自动上传到你配置的 GitHub 仓库。需确保：
+
+- `gh auth status` 已登录
+- Token 有 `repo` scope
+
+默认上传到 `screenshots/YYYY-MM-DD/` 目录。
+
+### 6. 首次运行（手动登录 + 自动保存 cookies）
+
+```powershell
+$env:FORCE_RUN = "true"  # 跳过 4 天检查
+node action_renew.js
 ```
 
-脚本会自动启动 Chrome (如果需要)，逐个处理账号，并在根目录下的 `photo/` 文件夹中保存每个账号运行结束时的截图（`账号名.png`）。窗口（默认无头模式为 false，你可以看到操作过程），并依次为列表中的用户续期。
+应该看到：
+- Chrome 启动（窗口在屏幕外）
+- 浏览器登录 → 自动写入 cookies 到 `USER_DATA_DIR`
+- ALTCHA 自动解 → 续期成功
+- 截图上传到 GitHub → WxPusher 推送微信
+- 本地截图自动删除
+
+### 7. 配置 Windows 计划任务
+
+打开 PowerShell（**管理员**），执行：
+
+```powershell
+$action  = New-ScheduledTaskAction -Execute 'node.exe' -Argument 'c:\path\to\katabump-fork\action_renew.js' -WorkingDirectory 'c:\path\to\katabump-fork'
+$trigger = New-ScheduledTaskTrigger -Daily -At '12:00:00'
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+Register-ScheduledTask -TaskName 'Katabump Renew' -Action $action -Trigger $trigger -Settings $settings -User 'SYSTEM' -RunLevel Highest -Force
+```
+
+**关键**：`StartWhenAvailable` 让电脑关机时错过 12:00，下次开机自动补跑。
+
+### 8. 验证计划任务
+
+```powershell
+Get-ScheduledTask -TaskName 'Katabump Renew' | Format-List TaskName,State,@{N='Trigger';E={$_.Triggers[0].ToString()}},@{N='StartWhenAvailable';E={$_.Settings.StartWhenAvailable}}
+```
+
+应看到：
+
+```
+TaskName           : Katabump Renew
+State              : Ready
+StartWhenAvailable : True
+```
+
+---
+
+## ☁️ GitHub Actions 云端运行（备选）
+
+如果不想本地跑，也可以用 GitHub Actions。
+
+> **⚠️ 注意**：GitHub Actions 数据中心 IP 容易被 Cloudflare 拦截，需要住宅 IP 代理或 CapSolver 等打码服务。本地方案更稳。
+
+### 1. Fork 仓库
+
+Fork 本仓库到你的 GitHub 账号。
+
+### 2. 配置 Secrets
+
+进入 **Settings → Secrets and variables → Actions**，添加：
+
+| Secret 名 | 格式 |
+|----------|------|
+| `USERS_JSON` | `[{"username":"...","password":"..."}]` |
+| `HTTP_PROXY`（可选） | `http://user:pass@ip:port` |
+| `WXPUSHER_APP_TOKEN`（可选） | `AT_xxx` |
+| `WXPUSHER_UIDS`（可选） | `UID_xxx`（多个用逗号分隔） |
+| `GITHUB_TOKEN` | 自动提供（用于图床） |
+
+### 3. 启用 Workflow
+
+进入 **Actions** 页面启用 `renew.yml`。它会在**每天北京时间 16:00 (UTC 08:00)** 自动运行。
+
+---
+
+## ⚙️ 环境变量参考
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `USERS_JSON` | - | JSON 字符串用户列表（最高优先级） |
+| `USERS_CONFIG` | `users.json` | 用户配置文件路径 |
+| `WXPUSHER_CONFIG` | `wxpusher.json` | WxPusher 配置文件路径 |
+| `CHROME_PATH` | `/usr/bin/google-chrome`（Linux）/ 自动检测（Windows） | Chrome 路径 |
+| `CHROME_USER_DATA_DIR` | `%TEMP%/katabump_chrome_data` | Chrome 用户数据目录（持久化登录态） |
+| `LAST_RUN_FILE` | `.last_run` | 频率检查时间戳文件 |
+| `FORCE_RUN` | - | `true` 跳过 4 天检查 |
+| `SHOW_WINDOW` | - | `true` 显示 Chrome 窗口（调试用） |
+| `HTTP_PROXY` | - | HTTP 代理 |
+| `LOGIN_STATE_FILE` | `login_state.json` | 登录态文件（旧方案，已弃用） |
 
 ---
 
 ## 🛠️ 项目结构
 
-* `renew.js`: Windows 本地运行的主程序。
-* `action_renew.js`: 专门用于 GitHub Actions 环境的脚本（适配 Linux/Headless）。
-* `.github/workflows/renew.yml`: GitHub Actions 的定时任务配置文件。
-* `login.json`: (需手动创建) 存放本地运行的账号信息。
+```
+katabump-fork/
+├── action_renew.js              # 主脚本（含 WxPusher + GitHub 图床 + 4天检查）
+├── renew.js                     # 原项目 Windows 本地脚本（保留兼容）
+├── users.json                   # （需创建）账号凭据
+├── users.json.example           # 模板
+├── wxpusher.json                # （需创建）WxPusher 配置
+├── wxpusher.example.json        # 模板
+├── .last_run                    # 频率检查时间戳（自动维护）
+├── turnstilePatch/              # Turnstile 扩展（修补 MouseEvent.screenX/Y）
+│   ├── manifest.json
+│   └── script.js
+└── .github/workflows/
+    └── renew.yml                # GitHub Actions 配置
+```
+
+---
+
+## ❓ 常见问题
+
+### 续期失败显示 "Turnstile 验证码连续 3 次未通过"
+
+Cloudflare 检测到当前 IP/环境异常。解决：
+
+1. **本地**：通常不会遇到（家庭 IP 信誉好）。如遇到，关掉所有 Chrome 实例重试。
+2. **GitHub Actions**：需要住宅 IP 代理（`HTTP_PROXY` Secret），或 CapSolver 打码。
+
+### 没有收到微信通知
+
+1. 检查 `wxpusher.json` 是否正确填入 `appToken` 和 `uids`
+2. 确认已微信扫码关注 **wxpusher** 公众号
+3. 确认 zone 页面上能看到你的 UID（https://wxpusher.zjiecode.com/zone）
+4. 脚本日志会显示 `[WxPusher] HTTP xxx 响应: {...}`，看具体错误码
+
+### 脚本跳过了，没跑
+
+4 天检查生效，距离上次成功运行 < 4 天会跳过。
+
+```powershell
+$env:FORCE_RUN = "true"; node action_renew.js  # 强制运行
+```
+
+### Chrome 启动失败
+
+检查 `CHROME_PATH` 环境变量，或直接修改脚本里的默认值。
+
+---
+
+## 📜 License
+
+MIT
