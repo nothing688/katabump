@@ -2,123 +2,234 @@
 
 [English Version](README_EN.md) | [中文说明](README.md)
 
-This project is an automation script for renewing Katabump servers. It utilizes Playwright and CDP (Chrome DevTools Protocol) to simulate user interactions, effectively specifically targeting the Cloudflare Turnstile CAPTCHA to ensure continuous server service.
+An automation script for renewing Katabump servers. It uses Playwright + CDP (Chrome DevTools Protocol) + a Cloudflare Turnstile extension to simulate real user interactions, reliably bypasses Cloudflare Turnstile CAPTCHAs, and automatically solves ALTCHA PoW challenges for fully unattended server renewal.
 
-It supports both **Windows Local Execution** and **GitHub Actions Cloud Execution**.
+Supports both **Windows local scheduled execution** (recommended) and **GitHub Actions cloud execution**.
+
+---
 
 ## ✨ Features
 
-- **Smart Bypass**: Uses CDP to simulate realistic mouse trajectories and clicks, combined with screen coordinate spoofing, to achieve a high success rate in bypassing Cloudflare Turnstile.
-- **Auto-Retry**: Built-in strict verification retry mechanism. It automatically restarts the verification flow if the CAPTCHA check fails.
-- **Multi-User**: Supports batch renewal for multiple accounts.
-- **Cloud/Local**: Can run on your local machine or automatically on part of a daily schedule using GitHub Actions.
+- **Real browser, hidden window**: Chrome renders fully (satisfying Cloudflare detection), but the window is positioned off-screen via `--window-position=-32000,-32000` — completely invisible to the user.
+- **Smart CAPTCHA bypass**: `MouseEvent.screenX/screenY` patching + Shadow DOM Hook forces Turnstile into auto-pass mode.
+- **ALTCHA auto-solve**: Automatically solves the ALTCHA proof-of-work challenge before renewal, completes in ~3 seconds.
+- **Login persistence**: Chrome `--user-data-dir` automatically saves cookies, no re-login needed for 14 days.
+- **4-day frequency check**: Avoids wasteful daily runs. Windows Task Scheduler triggers daily, the script internally decides whether to actually run.
+- **WeChat notifications**: WxPusher pushes rich-text messages (with screenshots) directly to WeChat, no VPN needed.
+- **GitHub as image host**: Screenshots auto-upload to GitHub (raw.githubusercontent.com is fast in China), local copies deleted after successful upload.
+- **Missed-run auto-recovery**: Windows Task Scheduler `-StartWhenAvailable` recovers missed runs after boot.
 
 ---
 
-## 🚀 GitHub Actions Cloud Run (Recommended)
+## 🚀 Windows Local Execution (Recommended)
 
-This is the easiest way to set it up once and have it run automatically every day.
-
-1.  **Fork this repository** to your GitHub account.
-2.  Go to your repository settings: **Settings** -> **Secrets and variables** -> **Actions**.
-3.  Click **New repository secret** and add a secret named `USERS_JSON`.
-4.  The **Value** must be a JSON array (condensed into a single line is best):
-    ```json
-    [{"username": "your_email@example.com", "password": "your_password"}, {"username": "another@example.com", "password": "pwd"}]
-    ```
-5.  **(Optional) Configure Proxy**:
-    If you need to run behind a proxy (e.g. to avoid IP blocks), add a Secret named `HTTP_PROXY`.
-    -   **Format**:
-        -   No Auth: `http://ip:port`
-        -   With Auth: `http://username:password@ip:port`
-    -   **Note**: The script validates the proxy before use. Default is disabled.
-6.  **(Optional) Telegram Notifications**:
-    If you want to receive Telegram notifications (with screenshots) upon renewal success, failure, or skip, add the following Secrets:
-    -   `TG_BOT_TOKEN`: Your Telegram Bot Token (from @BotFather).
-    -   `TG_CHAT_ID`: Your Chat ID (User ID or Group ID).
-    > If not configured, notifications will be skipped.
-### 4. Results & Screenshots
-- **Logs**: Check real-time logs in the `Run Renew Script` step.
-- **Screenshots**: Screenshots are automatically captured for each user (success or failure) and uploaded as artifacts.
-  - Download the `screenshots` zip file from the **Artifacts** section of the workflow run summary.
-  - Files are named `username.png`.
-5.  Save it. Then, go to the **Actions** tab and enable the workflow. It is scheduled to run automatically at **08:00 Beijing Time (00:00 UTC)**.
-6.  You can also manually click "Run workflow" to test it immediately.
-
----
-
-## 💻 Windows Local Execution Guide
-
-Follow these steps if you want to run the script locally on your computer for debugging or monitoring.
+The most stable approach: Local Chrome + Windows Task Scheduler, runs daily at 12:00, results pushed to WeChat.
 
 ### 1. Prerequisites
-Ensure you have [Node.js](https://nodejs.org/) installed (version v18+ recommended).
+
+- [Node.js](https://nodejs.org/) v18+
+- [Google Chrome](https://www.google.com/chrome/) installed
+- [GitHub CLI](https://cli.github.com/) logged in (used for image hosting)
 
 ### 2. Install Dependencies
-Open a terminal (PowerShell or CMD) in the project root directory and run:
+
 ```bash
+cd katabump-fork
 npm install
 ```
 
-### 3. Configure Credentials
-The project contains a `login.json.template` file.
-1. **Rename** it to `login.json`.
-2. Open it with a text editor and fill in your account credentials:
-   ```json
-   [
-       {
-           "username": "myemail@gmail.com",
-           "password": "mypassword123"
-       }
-   ]
-   ```
-   > **Note**: `login.json` is included in `.gitignore` and will NOT be uploaded to GitHub.
+### 3. Configure Account
 
-### 4. Configure Chrome Path
-Open the `renew.js` file and look for lines 11-12:
+Copy `users.json.example` to `users.json` and fill in your credentials:
 
-```javascript
-const CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const USER_DATA_DIR = path.join(__dirname, 'ChromeData_Katabump');
-const HEADLESS = true;
+```json
+[
+  {"username": "your_email@example.com", "password": "your_password"}
+]
 ```
 
-*   **CHROME_PATH**: This is the installation path of your local Chrome browser. Modify this if your installation path is different!
-*   **USER_DATA_DIR**:
-    *   This folder stores browser data generated during script execution (cache, cookies, sessions, etc.).
-    *   **Purpose**: It helps maintain your login session so you don't need to re-enter credentials every time.
-    *   **Can it be deleted?**: **Yes**. If you want to reset all states (clear cache completely), simply delete this folder. The script will recreate it the next time it runs.
-*   **HEADLESS**:
-    *   `false`: The script launches a visible Chrome window so you can see what it's doing.
-    *   `true`: (Default) Runs silently in the background (headless mode), useful if you want it to run without disturbing you.
+> `users.json` is in `.gitignore`, won't be uploaded to GitHub.
 
-### 5. Run Script
+**Alternative — Environment variable** (GitHub Actions Secret compatible):
+- `USERS_JSON`: JSON string (takes priority over `users.json`)
 
-If you need to use a proxy, set the `HTTP_PROXY` environment variable:
+### 4. Configure Chrome Path (first run only)
 
-**Powershell:**
 ```powershell
-$env:HTTP_PROXY="http://user:pass@127.0.0.1:7890"
-node renew.js
+$env:CHROME_PATH = "C:\Program Files\Google\Chrome\Application\chrome.exe"
 ```
 
-**CMD:**
-```cmd
-set HTTP_PROXY=http://user:pass@127.0.0.1:7890
-node renew.js
+Defaults: Linux → `/usr/bin/google-chrome`, Windows → `%TEMP%\katabump_chrome_data`.
+
+### 5. (Optional) Configure WxPusher Notifications
+
+**5.1 Register WxPusher**
+
+1. Visit https://wxpusher.zjiecode.com to sign up
+2. Create an app → copy the `appToken`
+3. Scan the QR code with WeChat to follow the **wxpusher** public account
+4. Visit https://wxpusher.zjiecode.com/zone to find your `UID`
+
+**5.2 Create config file**
+
+Copy `wxpusher.example.json` to `wxpusher.json` and fill in:
+
+```json
+{
+  "appToken": "AT_your_real_token",
+  "uids": ["UID_your_real_uid"],
+  "githubRepo": "yourname/yourrepo",
+  "githubBranch": "main"
+}
 ```
 
-Or just run without proxy:
-```bash
-node renew.js
+> `wxpusher.json` is in `.gitignore`.
+
+**5.3 GitHub Image Host Setup**
+
+Screenshots auto-upload to your configured GitHub repo. Make sure:
+
+- `gh auth status` shows logged in
+- Token has `repo` scope
+
+Default upload path: `screenshots/YYYY-MM-DD/`.
+
+### 6. First Run (Manual Login + Auto-save Cookies)
+
+```powershell
+$env:FORCE_RUN = "true"  # Skip the 4-day check
+node action_renew.js
 ```
-The script will auto-launch Chrome (if needed), process each account, and save a screenshot (`username.png`) in the `photo/` directory upon completion.
+
+Expected output:
+- Chrome launches (window off-screen)
+- Browser login → cookies auto-saved to `USER_DATA_DIR`
+- ALTCHA auto-solved → renewal successful
+- Screenshot uploaded to GitHub → WxPusher pushes to WeChat
+- Local screenshot auto-deleted
+
+### 7. Configure Windows Task Scheduler
+
+Open PowerShell **as Administrator** and run:
+
+```powershell
+$action  = New-ScheduledTaskAction -Execute 'node.exe' -Argument 'c:\path\to\katabump-fork\action_renew.js' -WorkingDirectory 'c:\path\to\katabump-fork'
+$trigger = New-ScheduledTaskTrigger -Daily -At '12:00:00'
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+Register-ScheduledTask -TaskName 'Katabump Renew' -Action $action -Trigger $trigger -Settings $settings -User 'SYSTEM' -RunLevel Highest -Force
+```
+
+**Key**: `StartWhenAvailable` recovers missed runs after boot.
+
+### 8. Verify Task
+
+```powershell
+Get-ScheduledTask -TaskName 'Katabump Renew' | Format-List TaskName,State,@{N='Trigger';E={$_.Triggers[0].ToString()}},@{N='StartWhenAvailable';E={$_.Settings.StartWhenAvailable}}
+```
+
+Should show:
+
+```
+TaskName           : Katabump Renew
+State              : Ready
+StartWhenAvailable : True
+```
+
+---
+
+## ☁️ GitHub Actions Cloud Execution (Alternative)
+
+> **⚠️ Caution**: GitHub Actions datacenter IPs are easily flagged by Cloudflare. Requires residential proxy or CAPTCHA-solving service. Local execution is more reliable.
+
+### 1. Fork the Repository
+
+Fork this repository to your GitHub account.
+
+### 2. Configure Secrets
+
+Go to **Settings → Secrets and variables → Actions**, add:
+
+| Secret | Format |
+|--------|--------|
+| `USERS_JSON` | `[{"username":"...","password":"..."}]` |
+| `HTTP_PROXY` (optional) | `http://user:pass@ip:port` |
+| `WXPUSHER_APP_TOKEN` (optional) | `AT_xxx` |
+| `WXPUSHER_UIDS` (optional) | `UID_xxx` (comma-separated for multiple) |
+| `GITHUB_TOKEN` | Auto-provided |
+
+### 3. Enable Workflow
+
+Go to **Actions** and enable `renew.yml`. It runs daily at **UTC 08:00 (Beijing 16:00)**.
+
+---
+
+## ⚙️ Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `USERS_JSON` | - | JSON string of users (highest priority) |
+| `USERS_CONFIG` | `users.json` | User config file path |
+| `WXPUSHER_CONFIG` | `wxpusher.json` | WxPusher config file path |
+| `CHROME_PATH` | `/usr/bin/google-chrome` (Linux) / auto (Windows) | Chrome executable path |
+| `CHROME_USER_DATA_DIR` | `%TEMP%/katabump_chrome_data` | Chrome user data dir (cookie persistence) |
+| `LAST_RUN_FILE` | `.last_run` | Frequency check timestamp file |
+| `FORCE_RUN` | - | `true` to skip 4-day check |
+| `SHOW_WINDOW` | - | `true` to show Chrome window (debug only) |
+| `HTTP_PROXY` | - | HTTP proxy |
+| `LOGIN_STATE_FILE` | `login_state.json` | Login state file (legacy, deprecated) |
 
 ---
 
 ## 🛠️ Project Structure
 
-*   `renew.js`: Main script for Windows local execution.
-*   `action_renew.js`: Dedicated script for GitHub Actions environment (Linux/Headless adapted).
-*   `.github/workflows/renew.yml`: Configuration file for GitHub Actions scheduled tasks.
-*   `login.json`: (Manually created) Stores account info for local runs.
+```
+katabump-fork/
+├── action_renew.js              # Main script (WxPusher + GitHub image host + 4-day check)
+├── renew.js                     # Original Windows local script (legacy, kept for compat)
+├── users.json                   # (Create) Account credentials
+├── users.json.example           # Template
+├── wxpusher.json                # (Create) WxPusher config
+├── wxpusher.example.json        # Template
+├── .last_run                    # Frequency check timestamp (auto-maintained)
+├── turnstilePatch/              # Turnstile extension (patches MouseEvent.screenX/Y)
+│   ├── manifest.json
+│   └── script.js
+└── .github/workflows/
+    └── renew.yml                # GitHub Actions config
+```
+
+---
+
+## ❓ FAQ
+
+### Renewal failed: "Turnstile CAPTCHA failed 3 times"
+
+Cloudflare flagged the current IP/environment. Solutions:
+
+1. **Local**: Usually doesn't happen (home IP has good reputation). If it does, close all Chrome instances and retry.
+2. **GitHub Actions**: Requires residential proxy (`HTTP_PROXY` Secret) or CAPTCHA solver like CapSolver.
+
+### No WeChat notifications received
+
+1. Check `wxpusher.json` has correct `appToken` and `uids`
+2. Confirm you've scanned the QR code to follow the **wxpusher** public account
+3. Confirm your UID appears in zone page (https://wxpusher.zjiecode.com/zone)
+4. Script log shows `[WxPusher] HTTP xxx response: {...}` — check error code
+
+### Script skipped, didn't run
+
+The 4-day check kicked in — less than 4 days since last successful run.
+
+```powershell
+$env:FORCE_RUN = "true"; node action_renew.js  # Force run
+```
+
+### Chrome failed to start
+
+Check `CHROME_PATH` env var or modify the default value in the script.
+
+---
+
+## 📜 License
+
+MIT
