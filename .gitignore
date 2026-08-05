@@ -1,7 +1,9 @@
 node_modules/
-login.json
-ChromeData_Katabump/
-.env
+users.json
+wxpusher.json
+login_state.json
+.last_run
+screenshots/
 *.log
 .DS_Store
-photo/
+Thumbs.db
