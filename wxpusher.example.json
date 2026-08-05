@@ -1,0 +1,11 @@
+{
+  "_comment": "WxPusher 通知配置 (复制此文件为 wxpusher.json 并填入真实值)",
+  "appToken": "AT_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "_appToken_help": "1. 访问 https://wxpusher.zjiecode.com 注册  2. 创建应用  3. 复制 appToken",
+  "uids": ["UID_xxxxxxxxxxxxxxxxxxxxxxxxxxxx"],
+  "_uids_help": "1. 用微信扫码关注公众号 'wxpusher'  2. 访问 https://wxpusher.zjiecode.com/zone  3. 找到你的 UID",
+  "githubRepo": "nothing688/katabump",
+  "_githubRepo_help": "截图上传到哪个 GitHub 仓库 (默认 nothing688/katabump). 需确保 gh CLI 已登录且有该 repo 写入权限",
+  "githubBranch": "main",
+  "_githubBranch_help": "目标分支, 默认 main"
+}
